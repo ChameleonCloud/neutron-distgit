@@ -5,7 +5,7 @@
 
 Name:		openstack-%{service}
 Version:	7.2.0
-Release:	1%{?dist}
+Release:	1.vlans%{?dist}
 Epoch:		1
 Summary:	OpenStack Networking Service
 
@@ -39,6 +39,8 @@ Source29:	neutron-rpc-server.service
 Source30:	%{service}-dist.conf
 Source31:	conf.README
 Source33:       neutron-enable-bridge-firewall.sh
+
+Patch0001:      0001-Add-support-for-dynamic-VLANs-in-Neutron.patch
 
 BuildArch:	noarch
 
