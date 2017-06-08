@@ -5,7 +5,7 @@
 
 Name:		openstack-%{service}
 Version:	7.0.4
-Release:	1%{?milestone}%{?dist}
+Release:	1.vlans%{?milestone}%{?dist}
 Epoch:		1
 Summary:	OpenStack Networking Service
 
@@ -38,6 +38,8 @@ Source29:	neutron-rpc-server.service
 
 Source30:	%{service}-dist.conf
 Source31:	conf.README
+
+Patch0001:      0001-Add-support-for-dynamic-VLANs-in-Neutron.patch
 
 BuildArch:	noarch
 

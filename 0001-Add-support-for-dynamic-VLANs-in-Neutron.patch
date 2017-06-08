@@ -1,0 +1,75 @@
+From f2577288c44ce5b8fc762607188d1c04144dae47 Mon Sep 17 00:00:00 2001
+From: Pierre Riteau <priteau@uchicago.edu>
+Date: Wed, 7 Jun 2017 18:06:27 +0100
+Subject: [PATCH] Add support for dynamic VLANs in Neutron
+
+---
+ neutron/agent/linux/ip_lib.py                      |  8 +++++++
+ .../drivers/openvswitch/agent/ovs_neutron_agent.py | 25 ++++++++++++++++++++++
+ 2 files changed, 33 insertions(+)
+
+diff --git a/neutron/agent/linux/ip_lib.py b/neutron/agent/linux/ip_lib.py
+index 2932e69f5..1f8034d36 100644
+--- a/neutron/agent/linux/ip_lib.py
++++ b/neutron/agent/linux/ip_lib.py
+@@ -497,6 +497,14 @@ class IpLinkCommand(IpDeviceCommandBase):
+         retval = dict(zip(keys, values))
+         return retval
+ 
++    def add_vint(self, src_dev, segmentation_id):
++        vlan_device_name = "%s.%s" % (src_dev, str(segmentation_id))
++        if not device_exists(vlan_device_name):
++            self._as_root([], ('add', 'link', src_dev, 'name',
++                vlan_device_name, 'type', 'vlan', 'id', str(segmentation_id)))
++        else:
++            LOG.exception(_LE("%s exists already"), vlan_device_name)
++        return vlan_device_name
+ 
+ class IpAddrCommand(IpDeviceCommandBase):
+     COMMAND = 'addr'
+diff --git a/neutron/plugins/ml2/drivers/openvswitch/agent/ovs_neutron_agent.py b/neutron/plugins/ml2/drivers/openvswitch/agent/ovs_neutron_agent.py
+index 8c006e784..72c84b849 100644
+--- a/neutron/plugins/ml2/drivers/openvswitch/agent/ovs_neutron_agent.py
++++ b/neutron/plugins/ml2/drivers/openvswitch/agent/ovs_neutron_agent.py
+@@ -796,6 +796,25 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
+         if net_uuid not in self.local_vlan_map or ovs_restarted:
+             self.provision_local_vlan(net_uuid, network_type,
+                                       physical_network, segmentation_id)
++        ip_address = fixed_ips[0]['ip_address']
++        if segmentation_id is not None:
++            LOG.info(_LI("**** router port on net %s vlan %s with IP %s ****"), net_uuid, segmentation_id, ip_address)
++            # this part creates the interface
++            src_dev = str(self.phys_brs[physical_network].br_name)
++            vlan_device_name = ip_lib.IPDevice(src_dev).link.add_vint(src_dev, segmentation_id)
++            ip_dev = ip_lib.IPDevice(vlan_device_name)
++            ip_dev.link.set_up()
++            # then add the IP address
++            # if 'network:dhcp' in device_owner:
++            old_ip = netaddr.IPAddress(ip_address)
++            new_ip = netaddr.IPAddress(int(old_ip)-1)
++            if ip_dev.addr.list(to=str(new_ip)):
++                # originally used addr.get_devices_with_ip() but changed to fit different versions of ip_lib.py
++                LOG.info("[FY] gateway %s exists already", ip_dev.name)
++            else:
++                ip_dev.addr.add(str(new_ip)+"/24")
++                LOG.info("[FY] Added gateway %s with IP %s", ip_dev.name, new_ip)
++
+         lvm = self.local_vlan_map[net_uuid]
+         lvm.vif_ports[port.vif_id] = port
+ 
+@@ -952,6 +971,12 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
+             self.dvr_agent.unbind_port_from_dvr(vif_port, lvm)
+         lvm.vif_ports.pop(vif_id, None)
+ 
++        src_dev = str(self.phys_brs[lvm.physical_network].br_name)
++        vlan_device_name = "%s.%s" % (src_dev, str(lvm.segmentation_id))
++        vlan_device = ip_lib.IPDevice(vlan_device_name)
++        LOG.info(_LI("**** trying to delete %s ****"), vlan_device.name)
++        vlan_device.link.delete()
++
+         if not lvm.vif_ports:
+             self.reclaim_local_vlan(net_uuid)
+ 
+-- 
+2.13.1
+
